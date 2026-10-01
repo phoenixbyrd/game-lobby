@@ -207,6 +207,9 @@ var gstates = {};      // gameId -> latest state
 var ganswers = {};     // gameId -> {playerHex: choiceIdx}
 var openGameId = null; // board currently displayed
 var triviaTimers = {}; // gameId -> timeout id (host only)
+var closeTimers = {};  // gameId -> timeout id (host auto-close after finish)
+var FINISH_CLOSE_SECS = 15;   // host clears a finished game after this long
+var IDLE_CLOSE_SECS = 300;    // any game idle this long gets closed/hidden
 var TRIVIA_ROUNDS = 5, TRIVIA_QSECS = 25, TRIVIA_RSECS = 6;
 
 /* ---- pure game logic (unit-tested in node) ---- */
@@ -342,6 +345,46 @@ async function finishGame(s, winner) {
   await pubGameSession(s);
   renderGameList(); renderBoard();
 }
+/* Host closes a game outright: everyone drops it. */
+async function closeGame(id) {
+  var s = games[id];
+  if (!s || s.host !== myPubHex || s.status === 'closed') return;
+  s.status = 'closed'; s.at = nowSec();
+  await pubGameSession(s);
+  dropGame(id);
+  sysLine('game closed');
+}
+/* Forget a game locally (closed event, idle timeout, or host close). */
+function dropGame(id) {
+  delete games[id]; delete gstates[id]; delete ganswers[id];
+  if (triviaTimers[id]) { clearTimeout(triviaTimers[id]); delete triviaTimers[id]; }
+  if (closeTimers[id]) { clearTimeout(closeTimers[id]); delete closeTimers[id]; }
+  if (openGameId === id) closeBoard();
+  renderGameList();
+}
+function lastActivity(id) {
+  var s = games[id]; if (!s) return 0;
+  var st = gstates[id];
+  return Math.max(s.at || 0, (st && st.at) || 0);
+}
+/* Every 30s: close games idle 5+ min. Host publishes the close so everyone
+   cleans up; non-hosts just hide it locally (a later event re-adds it). */
+function sweepStaleGames() {
+  var now = nowSec();
+  Object.keys(games).forEach(function (id) {
+    var s = games[id];
+    if (!s || s.status === 'closed') return;
+    if (now - lastActivity(id) < IDLE_CLOSE_SECS) return;
+    if (s.host === myPubHex) {
+      s.status = 'closed'; s.at = now;
+      pubGameSession(s);
+      dropGame(id);
+      sysLine('closed idle game (' + GDEF[s.game].label + ')');
+    } else {
+      dropGame(id);
+    }
+  });
+}
 function otherPlayer(s) {
   for (var i = 0; i < s.players.length; i++)
     if (s.players[i] !== myPubHex) return s.players[i];
@@ -455,7 +498,11 @@ function onGameSession(ev) {
   var old = games[s.id];
   if (old && (s.at || 0) < (old.at || 0)) return;   // older session update: ignore
   if (old && old.host !== s.host) return;          // host never changes
+  if (s.status === 'closed') { dropGame(s.id); return; }
   games[s.id] = s;
+  if (s.status === 'finished' && s.host === myPubHex && !closeTimers[s.id]) {
+    closeTimers[s.id] = setTimeout(function () { closeGame(s.id); }, FINISH_CLOSE_SECS * 1000);
+  }
   if (s.status === 'open' && s.players.indexOf(myPubHex) < 0 &&
       s.players.length < GDEF[s.game].maxp) {
     sysLine(gameName(s) + ' is open — tap 🎮 to join');
@@ -568,6 +615,9 @@ function renderBoard() {
   var s = games[openGameId], st = gstates[openGameId];
   if (!s) { closeBoard(); return; }
   title.textContent = '🎮 ' + GDEF[s.game].label;
+  var endBtn = $('bendgame');
+  if (endBtn) endBtn.style.display =
+    (s.host === myPubHex && s.status !== 'closed') ? '' : 'none';
   var html = '', stat = '';
   if (s.game === 'tictactoe') {
     var r = renderTTT(s, st); stat = r.stat; html = r.html;
@@ -674,6 +724,7 @@ function bindGames() {
   $('gamebtn').innerHTML = '🎮<span class="dot" style="display:none">●</span>';
   $('gamebtn').addEventListener('click', function () { openGames(); });
   $('bclose').addEventListener('click', closeBoard);
+  $('bendgame').addEventListener('click', function () { if (openGameId) closeGame(openGameId); });
   $('gstart-ttt').addEventListener('click', function () { startGame('tictactoe'); });
   $('gstart-c4').addEventListener('click', function () { startGame('connect4'); });
   $('gstart-trivia').addEventListener('click', function () { startGame('trivia'); });
@@ -682,6 +733,8 @@ function clearGames() {
   games = {}; gstates = {}; ganswers = {}; openGameId = null;
   for (var id in triviaTimers) clearTimeout(triviaTimers[id]);
   triviaTimers = {};
+  for (var id2 in closeTimers) clearTimeout(closeTimers[id2]);
+  closeTimers = {};
   closeGames(); closeBoard();
 }
 
@@ -752,6 +805,7 @@ async function init() {
   if (myName === 'guest' && hasNsec) myName = shortHex(myPubHex);
   setSubs();
   connectRelays();
+  setInterval(sweepStaleGames, 30000);
   sysLine('welcome to the game lobby \u2014 start a game or join one \U0001F3AE');
   renderGameList();
 }
@@ -768,6 +822,8 @@ try {
       myPub: function () { return myPubHex; },
       onGameSession: onGameSession,
       onGameState: onGameState,
+      closeGame: closeGame,
+      sweepStaleGames: sweepStaleGames,
       renderGameList: renderGameList
     };
   }

@@ -135,6 +135,9 @@
   .cksq .ckp.p1{background:#ececec; color:#666;}
   .cksq.sel{outline:3px solid var(--acc); outline-offset:-3px;}
   .cksq.dest{outline:3px solid var(--good); outline-offset:-3px;}
+  .cksq.canmove .ckp{box-shadow:0 0 0 2px #3fb95099;}
+  .cksq.mustjump .ckp{box-shadow:0 0 0 3px var(--warn); animation:ckpulse 1.1s infinite;}
+  @keyframes ckpulse{50%{box-shadow:0 0 0 6px #e3b34155;}}
   #gstatus{font-size:14px; text-align:center; min-height:22px; margin:4px 0 2px;}
   #gplayers{font-size:12.5px; color:var(--dim); text-align:center; margin-bottom:6px;}
   #toast{
@@ -985,6 +988,12 @@ function renderCheckers(g,board){
   if(myTurn&&f.cont&&(!ckSel||ckSel[0]!==g)) ckSel=[g,f.cont[0],f.cont[1]]; // must keep jumping
   var dests=[];
   if(myTurn&&ckSel) dests=ckLegalDests(b,mi,ckSel[1],ckSel[2]);
+  // mark pieces that can actually move (jumps are mandatory, so only jumpers light up then)
+  var myMoves=myTurn?ckAllMoves(b,mi):[];
+  if(myTurn&&f.cont) myMoves=myMoves.filter(function(m){return m.from[0]===f.cont[0]&&m.from[1]===f.cont[1];});
+  var mustJump=myMoves.length>0&&!!myMoves[0].cap;
+  var canFrom={};
+  myMoves.forEach(function(m){ canFrom[m.from[0]+','+m.from[1]]=1; });
   for(var r=0;r<8;r++) for(var c=0;c<8;c++){
     (function(r,c){
       var sq=document.createElement('button');
@@ -995,6 +1004,7 @@ function renderCheckers(g,board){
         var sp=document.createElement('span'); sp.className='ckp p'+pc.p;
         sp.textContent=pc.k?'♛':'';
         sq.appendChild(sp);
+        if(myTurn&&pc.p===mi&&canFrom[r+','+c]) sq.classList.add(mustJump?'mustjump':'canmove');
       }
       if(ckSel&&ckSel[1]===r&&ckSel[2]===c) sq.classList.add('sel');
       if(dests.some(function(d){return d[0]===r&&d[1]===c;})) sq.classList.add('dest');
@@ -1011,6 +1021,8 @@ function renderCheckers(g,board){
     $('gstatus').textContent=pname(players[info.winner])+' wins! ('+sc+')';
   }else if(f.cont){
     $('gstatus').textContent=(f.turn===mi?'Jump again — keep going!':pname(players[f.turn])+' jumps again…')+' · '+sc;
+  }else if(myTurn&&mustJump){
+    $('gstatus').textContent='Your turn — you must take the jump! · '+sc;
   }else{
     $('gstatus').textContent=(f.turn===mi?'Your turn':pname(players[f.turn])+"'s turn")+' · '+sc;
   }
@@ -1028,7 +1040,13 @@ function ckClick(g,r,c){
     }
   }
   var pc=b[r][c];
-  if(pc&&pc.p===mi&&(!f.cont||(f.cont[0]===r&&f.cont[1]===c))) ckSel=[g,r,c];
+  if(pc&&pc.p===mi&&(!f.cont||(f.cont[0]===r&&f.cont[1]===c))){
+    ckSel=[g,r,c];
+    if(!ckLegalDests(b,mi,r,c).length){
+      var anyJump=ckAllMoves(b,mi).some(function(m){return m.cap;});
+      toast(anyJump?'That piece is stuck — you must take the jump (pulsing piece).':'That piece has no moves right now.');
+    }
+  }
   else ckSel=null;
   renderGame();
 }
@@ -1112,7 +1130,7 @@ window.GRTEST={ relayCount:function(){ return socks.filter(function(w){return w.
   foldCheckers:foldCheckers, ckGameOver:ckGameOver,
   tttWinner:tttWinner, foldTtt:foldTtt, foldDots:foldDots,
   doC4Move:doC4Move, doCkMove:doCkMove, ckClick:ckClick, myHex:function(){ return myHex; },
-  gameOverInfo:gameOverInfo, noteEvent:noteEvent };
+  gameOverInfo:gameOverInfo, noteEvent:noteEvent, renderGame:renderGame };
 })();
 </script>
 </body>

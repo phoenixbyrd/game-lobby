@@ -109,6 +109,14 @@
   #board button:disabled{cursor:default;}
   #board button.x{color:var(--acc);} #board button.o{color:var(--warn);}
   #board button.win{border-color:var(--good); box-shadow:0 0 0 1px var(--good);}
+  /* dots & boxes */
+  #dotsWrap{position:relative; margin:14px auto; touch-action:manipulation;}
+  #dotsWrap .dot{position:absolute; width:10px; height:10px; border-radius:50%; background:var(--dim); transform:translate(-50%,-50%); z-index:3; pointer-events:none;}
+  #dotsWrap .edge{position:absolute; border:none; padding:0; cursor:pointer; border-radius:7px; background:#30363d66; z-index:1;}
+  #dotsWrap .edge.h{height:14px; transform:translateY(-50%);}
+  #dotsWrap .edge.v{width:14px; transform:translateX(-50%);}
+  #dotsWrap .edge.taken{cursor:default; z-index:2;}
+  #dotsWrap .box{position:absolute; border-radius:5px; opacity:.5; z-index:0;}
   #gstatus{font-size:14px; text-align:center; min-height:22px; margin:4px 0 2px;}
   #gplayers{font-size:12.5px; color:var(--dim); text-align:center; margin-bottom:6px;}
   #toast{
@@ -154,9 +162,10 @@
   <div class="sect">How it works</div>
   <div class="card"><div class="hint">
     Create a game, others join from this list. A game starts when it's full
-    (2 players for tic-tac-toe — it won't start at 1/2). The host can end the game
+    (2/2, 3/3…) — it won't start short. The host can end the game
     at any time: it disappears from the list and everyone goes back here.
-    Games idle for 5 minutes time out and vanish.
+    When a game finishes, everyone picks rematch or end — a rematch only
+    happens if all players choose it. Games idle for 5 minutes time out and vanish.
   </div></div>
 </div>
 
@@ -171,6 +180,14 @@
     <div id="gstatus"></div>
     <div id="board"></div>
     <div id="gplayers"></div>
+    <div id="replayPanel" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
+      <div id="replayText" class="hint" style="text-align:center; margin-bottom:8px;"></div>
+      <div class="row">
+        <div class="grow"><button class="btn primary" id="againBtn" style="margin-top:0;">🔁 Play again</button></div>
+        <div class="grow"><button class="btn" id="noReplayBtn" style="margin-top:0;">End game</button></div>
+      </div>
+      <div id="replayVotes" class="hint" style="text-align:center; margin-top:8px;"></div>
+    </div>
     <div class="row">
       <div class="grow"><button class="btn danger" id="endBtn" style="display:none; margin-top:0;">End game</button></div>
       <div class="grow"><button class="btn" id="leaveBtn" style="margin-top:0;">Leave</button></div>
@@ -187,12 +204,16 @@
     <span class="ico">⭕</span>
     <div><div class="t">Tic-tac-toe</div><div class="s">Classic 3×3 — 2 players, X goes first</div></div>
   </div>
+  <div class="gamepick" data-game="dotsboxes">
+    <span class="ico">🔲</span>
+    <div><div class="t">Dots &amp; Boxes</div><div class="s">Claim edges, take boxes — 2 to 4 players</div></div>
+  </div>
   <label class="lbl">Players</label>
   <div class="stepper">
     <button id="pMinus" aria-label="fewer players">−</button>
     <span class="val" id="pVal">2</span>
     <button id="pPlus" aria-label="more players">＋</button>
-    <span class="hint">tic-tac-toe is 2 players</span>
+    <span class="hint" id="pHint">tic-tac-toe is 2 players</span>
   </div>
   <button class="btn primary" id="createBtn">Create game</button>
   <button class="btn" id="cancelBtn">Cancel</button>
@@ -249,7 +270,9 @@ var RELAYS=['wss://nos.lol','wss://relay.snort.social','wss://relay.primal.net',
 var ROOM='c8cccebb2f77da1618a33b05530535026449f77a91e02fbd4ebe3830899f263c'; // the Green Room
 var K_SESSION=30032, K_EVENT=30033;
 var IDLE_TIMEOUT=300; // 5 minutes
-var GDEF={ tictactoe:{label:'Tic-tac-toe', icon:'⭕', maxp:2} };
+var GDEF={ tictactoe:{label:'Tic-tac-toe', icon:'⭕', maxp:2},
+           dotsboxes:{label:'Dots & Boxes', icon:'🔲', maxp:4} };
+var PCOLORS=['#2f81f7','#f85149','#d29922','#3fb950']; // player colors, by seat
 
 /* ================= identity (TEST: npub login, throwaway signing key) ================= */
 var myHex=null, myNpub='', myName='player', signHex=null, myPubHex=null;
@@ -387,7 +410,8 @@ function noteEvent(ev,c){
   if(seenEv.has(ev.id)) return;
   seenEv.add(ev.id);
   var g=c.gameId||tagv(ev,'g'); if(!g) return;
-  (gevents[g]=gevents[g]||[]).push({id:ev.id,at:ev.created_at,type:c.type,player:c.player,index:c.index});
+  (gevents[g]=gevents[g]||[]).push({id:ev.id,at:ev.created_at,type:c.type,player:c.player,
+    index:c.index,edge:c.edge,gen:c.gen,choice:c.choice});
 }
 function onGameEvent(ev){
   var c; try{ c=JSON.parse(ev.content); }catch(e){ return; }
@@ -399,6 +423,9 @@ function onGameEvent(ev){
   }
   if(c.type==='leave'&&s&&isHost(g)&&s.s.status!=='closed'){
     hostRemovePlayer(g,c.player.id);
+  }
+  if(c.type==='replay'&&s&&isHost(g)&&s.s.status!=='closed'){
+    resolveReplay(g);
   }
   renderJoinList(); renderGame();
 }
@@ -427,8 +454,8 @@ function tttWinner(b){
 }
 function foldTtt(g){
   var s=sessions[g]; if(!s) return null;
-  var players=s.s.players;
-  var moves=(gevents[g]||[]).filter(function(e){return e.type==='move';})
+  var players=s.s.players, gen=s.s.gen||0;
+  var moves=(gevents[g]||[]).filter(function(e){return e.type==='move'&&(e.gen||0)===gen;})
     .sort(function(a,b){return a.at-b.at||(a.id<b.id?-1:1);});
   var board=['','','','','','','','',''], xC=0, oC=0;
   moves.forEach(function(m){
@@ -444,6 +471,117 @@ function myMark(g){
   var s=sessions[g]; if(!s) return null;
   var i=s.s.players.findIndex(function(p){return p.id===myHex;});
   return i===0?'X':(i===1?'O':null);
+}
+
+/* ================= dots & boxes =================
+ * board: {R,C, edges:{edgeKey->playerIdx}, boxes:{boxKey->playerIdx}, turn:playerIdx}
+ * edge keys: 'h_r_c' (r:0..R, c:0..C-1), 'v_r_c' (r:0..R-1, c:0..C)
+ */
+function newDotsBoard(n){ var s=n>=3?5:4; return {R:s,C:s,edges:{},boxes:{},turn:0}; }
+function validEdge(b,key){
+  var p=String(key).split('_'); if(p.length!==3) return false;
+  var r=+p[1], c=+p[2]; if(isNaN(r)||isNaN(c)) return false;
+  if(p[0]==='h') return r>=0&&r<=b.R&&c>=0&&c<b.C;
+  if(p[0]==='v') return r>=0&&r<b.R&&c>=0&&c<=b.C;
+  return false;
+}
+function boxEdges(b,br,bc){ return ['h_'+br+'_'+bc,'h_'+(br+1)+'_'+bc,'v_'+br+'_'+bc,'v_'+br+'_'+(bc+1)]; }
+function boxesForEdge(b,key){
+  var p=key.split('_'), out=[];
+  if(p[0]==='h'){ var r=+p[1],c=+p[2];
+    if(r>0) out.push((r-1)+'_'+c);
+    if(r<b.R) out.push(r+'_'+c);
+  }else{ var r2=+p[1],c2=+p[2];
+    if(c2>0) out.push(r2+'_'+(c2-1));
+    if(c2<b.C) out.push(r2+'_'+c2);
+  }
+  return out;
+}
+function foldDots(g){
+  var s=sessions[g]; if(!s) return null;
+  var players=s.s.players, gen=s.s.gen||0;
+  var sb=s.s.board||{};
+  var bd={R:sb.R||4,C:sb.C||4,edges:{},boxes:{},turn:0};
+  var moves=(gevents[g]||[]).filter(function(e){return e.type==='move'&&(e.gen||0)===gen&&e.edge;})
+    .sort(function(a,b){return a.at-b.at||(a.id<b.id?-1:1);});
+  moves.forEach(function(m){
+    var pi=players.findIndex(function(p){return p.id===m.player.id;});
+    if(pi<0||pi!==bd.turn) return;
+    if(!validEdge(bd,m.edge)||bd.edges[m.edge]!=null) return;
+    bd.edges[m.edge]=pi;
+    var done=0;
+    boxesForEdge(bd,m.edge).forEach(function(bk){
+      if(bd.boxes[bk]!=null) return;
+      var bp=bk.split('_');
+      var all=boxEdges(bd,+bp[0],+bp[1]).every(function(k){return bd.edges[k]!=null;});
+      if(all){ bd.boxes[bk]=pi; done++; }
+    });
+    if(!done) bd.turn=(bd.turn+1)%players.length; // completing a box earns another turn
+  });
+  return {board:bd,players:players};
+}
+function dotsOver(bd,nplayers){
+  var total=(bd.R+1)*bd.C+bd.R*(bd.C+1);
+  if(Object.keys(bd.edges).length<total) return null;
+  var scores=[]; for(var i=0;i<nplayers;i++) scores.push(0);
+  Object.keys(bd.boxes).forEach(function(k){ scores[bd.boxes[k]]++; });
+  var mx=Math.max.apply(null,scores), win=[];
+  scores.forEach(function(sc,i){ if(sc===mx) win.push(i); });
+  return {scores:scores,winners:win};
+}
+
+/* ================= replay (rematch) =================
+ * On game over each player votes: pubEvent 'replay' {choice:'again'|'end', gen}.
+ * The host tallies — every current player must vote. All 'again' -> fresh board
+ * (gen+1); any 'end' -> game closes. Votes are per-gen so old votes never leak.
+ */
+function foldReplay(g){
+  var s=sessions[g]; if(!s) return {};
+  var gen=s.s.gen||0, votes={};
+  (gevents[g]||[]).forEach(function(e){
+    if(e.type==='replay'&&(e.gen||0)===gen&&e.player&&e.player.id&&
+       (e.choice==='again'||e.choice==='end')) votes[e.player.id]=e.choice;
+  });
+  return votes;
+}
+function gameOverInfo(g){
+  var s=sessions[g]; if(!s||s.s.status!=='playing') return null;
+  if(s.s.game==='tictactoe'){
+    var f=foldTtt(g), w=tttWinner(f.board);
+    return w?{game:'tictactoe',fold:f,w:w}:null;
+  }
+  if(s.s.game==='dotsboxes'){
+    var d=foldDots(g), o=dotsOver(d.board,d.players.length);
+    return o?{game:'dotsboxes',fold:d,over:o}:null;
+  }
+  return null;
+}
+async function voteReplay(g,choice){
+  if(!sessions[g]||!gameOverInfo(g)) return;
+  await pubEvent(g,'replay',{choice:choice,gen:sessions[g].s.gen||0});
+  renderGame();
+}
+async function resolveReplay(g){
+  var s=sessions[g]; if(!s||!isHost(g)) return;
+  if(!gameOverInfo(g)) return;
+  var votes=foldReplay(g), players=dispPlayers(g);
+  if(!players.length||!players.every(function(p){return votes[p.id];})) return;
+  if(players.every(function(p){return votes[p.id]==='again';})){
+    s.s.gen=(s.s.gen||0)+1;
+    if(s.s.game==='dotsboxes') s.s.board=newDotsBoard(s.s.players.length);
+    await pubSession(s.s);
+    toast('Rematch — fresh board');
+  }else{
+    await closeGame(g);
+  }
+}
+async function closeGame(g){
+  if(!g||!sessions[g]||!isHost(g)) return;
+  var s=sessions[g].s; s.status='closed';
+  await pubSession(s);
+  if(openGameId===g){ openGameId=null; showView('vLobby'); }
+  renderJoinList(); renderGame();
+  toast('Game ended');
 }
 
 /* ================= rendering ================= */
@@ -493,12 +631,22 @@ function renderGame(){
   $('gCount').textContent=n+'/'+s.maxPlayers;
   $('endBtn').style.display=isHost(g)?'block':'none';
   $('gplayers').textContent=dispPlayers(g).map(pname).join(', ');
-  var board=$('board'); board.innerHTML='';
+  var board=$('board'); board.innerHTML=''; board.style.display='';
+  $('replayPanel').style.display='none';
   if(s.status==='open'){
     $('gstatus').textContent=n>=s.maxPlayers?'Starting…':'Waiting for players… '+n+'/'+s.maxPlayers;
-    for(var i=0;i<9;i++){ var c=document.createElement('button'); c.disabled=true; board.appendChild(c); }
+    if(s.game==='dotsboxes'){
+      board.innerHTML='<div class="hint" style="text-align:center;padding:24px;">The grid appears when the game starts.</div>';
+    }else{
+      for(var i=0;i<9;i++){ var c=document.createElement('button'); c.disabled=true; board.appendChild(c); }
+    }
     return;
   }
+  if(s.game==='tictactoe') renderTtt(g,board);
+  else if(s.game==='dotsboxes') renderDots(g,board);
+  renderReplay(g);
+}
+function renderTtt(g,board){
   var f=foldTtt(g), w=tttWinner(f.board);
   for(var j=0;j<9;j++){
     (function(idx){
@@ -521,6 +669,75 @@ function renderGame(){
     if(mine) Array.prototype.forEach.call(board.children,function(c,idx){ if(!f.board[idx]) c.disabled=false; });
   }
 }
+function renderDots(g,board){
+  var f=foldDots(g), bd=f.board, players=f.players;
+  var info=dotsOver(bd,players.length);
+  board.style.display='block';
+  var cell=bd.C>4?52:64;
+  var wrap=document.createElement('div');
+  wrap.id='dotsWrap';
+  wrap.style.width=(bd.C*cell)+'px'; wrap.style.height=(bd.R*cell)+'px';
+  Object.keys(bd.boxes).forEach(function(k){
+    var pi=bd.boxes[k], p=k.split('_'), r=+p[0], c=+p[1];
+    var d=document.createElement('div'); d.className='box';
+    d.style.left=(c*cell+5)+'px'; d.style.top=(r*cell+5)+'px';
+    d.style.width=(cell-10)+'px'; d.style.height=(cell-10)+'px';
+    d.style.background=PCOLORS[pi%PCOLORS.length];
+    wrap.appendChild(d);
+  });
+  var edges=[];
+  for(var r=0;r<=bd.R;r++) for(var c=0;c<bd.C;c++) edges.push(['h',r,c]);
+  for(var r2=0;r2<bd.R;r2++) for(var c2=0;c2<=bd.C;c2++) edges.push(['v',r2,c2]);
+  var mi=players.findIndex(function(p){return p.id===myHex;});
+  var myTurn=!info&&mi===bd.turn;
+  edges.forEach(function(e){
+    var key=e[0]+'_'+e[1]+'_'+e[2];
+    var b=document.createElement('button'); b.className='edge '+e[0];
+    if(e[0]==='h'){ b.style.left=(e[2]*cell)+'px'; b.style.top=(e[1]*cell)+'px'; b.style.width=cell+'px'; }
+    else{ b.style.left=(e[2]*cell)+'px'; b.style.top=(e[1]*cell)+'px'; b.style.height=cell+'px'; }
+    var pi=bd.edges[key];
+    if(pi!=null){ b.classList.add('taken'); b.style.background=PCOLORS[pi%PCOLORS.length]; b.disabled=true; }
+    else{
+      b.classList.add('free');
+      b.disabled=!myTurn;
+      if(myTurn) b.onclick=function(){ doDotsMove(g,key); };
+    }
+    wrap.appendChild(b);
+  });
+  for(var dr=0;dr<=bd.R;dr++) for(var dc=0;dc<=bd.C;dc++){
+    var dot=document.createElement('div'); dot.className='dot';
+    dot.style.left=(dc*cell)+'px'; dot.style.top=(dr*cell)+'px';
+    wrap.appendChild(dot);
+  }
+  board.appendChild(wrap);
+  var scores=[]; for(var i=0;i<players.length;i++) scores.push(0);
+  Object.keys(bd.boxes).forEach(function(k){ scores[bd.boxes[k]]++; });
+  var sc=players.map(function(p,i){return pname(p)+' '+scores[i];}).join(' · ');
+  if(info){
+    $('gstatus').textContent=info.winners.length===1?
+      (pname(players[info.winners[0]])+' wins! ('+sc+')'):("It's a draw! ("+sc+')');
+  }else{
+    $('gstatus').textContent=(bd.turn===mi?'Your turn':pname(players[bd.turn])+"'s turn")+' · '+sc;
+  }
+}
+function renderReplay(g){
+  var info=gameOverInfo(g), rp=$('replayPanel');
+  if(!info){ rp.style.display='none'; return; }
+  rp.style.display='block';
+  var votes=foldReplay(g), players=dispPlayers(g);
+  var myV=votes[myHex];
+  $('againBtn').disabled=!!myV;
+  $('noReplayBtn').disabled=!!myV;
+  var wtxt;
+  if(info.game==='tictactoe'){
+    wtxt=info.w.mark==='draw'?"It's a draw!":(pname(playerByMark(g,info.w.mark))+' wins!');
+  }else{
+    wtxt=$('gstatus').textContent;
+  }
+  $('replayText').textContent=wtxt+' Rematch? Everyone must pick “Play again”.';
+  var waiting=players.filter(function(p){return !votes[p.id];});
+  $('replayVotes').textContent=!myV?'':(waiting.length?('Waiting for '+waiting.map(pname).join(', ')+'…'):'Tallying…');
+}
 function playerByMark(g,mark){
   var s=sessions[g].s;
   return s.players[mark==='X'?0:1]||null;
@@ -529,7 +746,16 @@ async function doMove(g,idx){
   var f=foldTtt(g); if(!f||f.board[idx]) return;
   var turnMark=(f.xC<=f.oC)?'X':'O';
   if(myMark(g)!==turnMark) return;
-  await pubEvent(g,'move',{index:idx});
+  await pubEvent(g,'move',{index:idx,gen:sessions[g].s.gen||0});
+  renderGame();
+}
+async function doDotsMove(g,key){
+  var s=sessions[g]; if(!s) return;
+  var f=foldDots(g); if(!f) return;
+  var mi=f.players.findIndex(function(p){return p.id===myHex;});
+  if(mi<0||mi!==f.board.turn) return;
+  if(!validEdge(f.board,key)||f.board.edges[key]!=null) return;
+  await pubEvent(g,'move',{edge:key,gen:s.s.gen||0});
   renderGame();
 }
 
@@ -549,6 +775,14 @@ setInterval(function(){
 
 /* ================= wiring ================= */
 var selGame='tictactoe', selPlayers=2;
+document.querySelectorAll('.gamepick').forEach(function(el){
+  el.onclick=function(){
+    selGame=el.getAttribute('data-game');
+    document.querySelectorAll('.gamepick').forEach(function(x){x.classList.toggle('sel',x===el);});
+    if(selGame==='tictactoe'){ selPlayers=2; $('pVal').textContent='2'; $('pHint').textContent='tic-tac-toe is 2 players'; }
+    else $('pHint').textContent='dots & boxes plays 2–4 players';
+  };
+});
 $('loginBtn').onclick=async function(){
   var idHex=npubToHex($('npubIn').value);
   if(!idHex){ $('loginErr').textContent='That doesn\u2019t look like an npub (or 64-hex key).'; return; }
@@ -565,12 +799,12 @@ $('npubIn').addEventListener('keydown',function(e){ if(e.key==='Enter') $('login
 $('newGameBtn').onclick=function(){ $('sheet').classList.add('open'); };
 $('cancelBtn').onclick=function(){ $('sheet').classList.remove('open'); };
 $('pMinus').onclick=function(){ if(selPlayers>2){ selPlayers--; $('pVal').textContent=selPlayers; } };
-$('pPlus').onclick=function(){ if(selPlayers<4){ selPlayers++; $('pVal').textContent=selPlayers; }
-  if(selGame==='tictactoe'&&selPlayers>2){ selPlayers=2; $('pVal').textContent=2; toast('tic-tac-toe is 2 players'); } };
+$('pPlus').onclick=function(){ var mx=GDEF[selGame].maxp; if(selPlayers<mx){ selPlayers++; $('pVal').textContent=selPlayers; } };
 $('createBtn').onclick=async function(){
   var maxp=selGame==='tictactoe'?2:selPlayers;
   var s={v:1,id:newGameId(),game:selGame,maxPlayers:maxp,status:'open',
     host:myPlayer(),players:[myPlayer()],at:nowSec()};
+  if(selGame==='dotsboxes') s.board=newDotsBoard(maxp);
   $('sheet').classList.remove('open');
   await pubSession(s);
   openGame(s.id);
@@ -582,13 +816,9 @@ $('leaveBtn').onclick=async function(){
   await pubEvent(g,'leave');
   openGameId=null; showView('vLobby'); renderJoinList();
 };
-$('endBtn').onclick=async function(){
-  var g=openGameId; if(!g||!isHost(g)) return;
-  var s=sessions[g].s; s.status='closed';
-  await pubSession(s);
-  openGameId=null; showView('vLobby'); renderJoinList();
-  toast('Game ended');
-};
+$('endBtn').onclick=function(){ closeGame(openGameId); };
+$('againBtn').onclick=function(){ if(openGameId) voteReplay(openGameId,'again'); };
+$('noReplayBtn').onclick=function(){ if(openGameId) voteReplay(openGameId,'end'); };
 })();
 </script>
 </body>

@@ -117,6 +117,24 @@
   #dotsWrap .edge.v{width:14px; transform:translateX(-50%);}
   #dotsWrap .edge.taken{cursor:default; z-index:2;}
   #dotsWrap .box{position:absolute; border-radius:5px; opacity:.5; z-index:0;}
+  /* connect 4 */
+  .c4drop{font-size:17px; border:1px solid var(--line); background:var(--bg); color:var(--acc);
+    border-radius:8px; padding:7px 0; cursor:pointer;}
+  .c4drop:disabled{opacity:.25; cursor:default;}
+  .c4cell{aspect-ratio:1; border-radius:10px; border:1px solid var(--line); background:var(--bg);
+    display:flex; align-items:center; justify-content:center;}
+  .c4disc{width:78%; aspect-ratio:1; border-radius:50%; background:#21262d;}
+  .c4disc.R{background:#f85149;} .c4disc.Y{background:#e3b341;}
+  /* checkers */
+  .cksq{aspect-ratio:1; border:none; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;}
+  .cksq.light{background:#f0d9b5;} .cksq.dark{background:#b58863;}
+  .cksq .ckp{width:76%; aspect-ratio:1; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:700;}
+  .cksq .ckp.p0{background:#d23b3b; color:#ffd7d7;}
+  .cksq .ckp.p1{background:#ececec; color:#666;}
+  .cksq.sel{outline:3px solid var(--acc); outline-offset:-3px;}
+  .cksq.dest{outline:3px solid var(--good); outline-offset:-3px;}
   #gstatus{font-size:14px; text-align:center; min-height:22px; margin:4px 0 2px;}
   #gplayers{font-size:12.5px; color:var(--dim); text-align:center; margin-bottom:6px;}
   #toast{
@@ -208,6 +226,14 @@
     <span class="ico">🔲</span>
     <div><div class="t">Dots &amp; Boxes</div><div class="s">Claim edges, take boxes — 2 to 4 players</div></div>
   </div>
+  <div class="gamepick" data-game="connect4">
+    <span class="ico">🔴</span>
+    <div><div class="t">Connect 4</div><div class="s">Drop discs, line up 4 — 2 players</div></div>
+  </div>
+  <div class="gamepick" data-game="checkers">
+    <span class="ico">🏁</span>
+    <div><div class="t">Checkers</div><div class="s">Jump or be jumped — 2 players</div></div>
+  </div>
   <label class="lbl">Players</label>
   <div class="stepper">
     <button id="pMinus" aria-label="fewer players">−</button>
@@ -267,11 +293,19 @@ function npubToHex(s){
 
 /* ================= constants ================= */
 var RELAYS=['wss://nos.lol','wss://relay.snort.social','wss://relay.primal.net','wss://relay.damus.io'];
+(function(){ // ?relay=ws://host:port overrides RELAYS (QA harness)
+  try{
+    var m=location.search.match(/[?&]relay=([^&]+)/);
+    if(m) RELAYS=[decodeURIComponent(m[1])];
+  }catch(e){}
+})();
 var ROOM='c8cccebb2f77da1618a33b05530535026449f77a91e02fbd4ebe3830899f263c'; // the Green Room
 var K_SESSION=30032, K_EVENT=30033;
 var IDLE_TIMEOUT=300; // 5 minutes
 var GDEF={ tictactoe:{label:'Tic-tac-toe', icon:'⭕', maxp:2},
-           dotsboxes:{label:'Dots & Boxes', icon:'🔲', maxp:4} };
+           dotsboxes:{label:'Dots & Boxes', icon:'🔲', maxp:4},
+           connect4:{label:'Connect 4', icon:'🔴', maxp:2},
+           checkers:{label:'Checkers', icon:'🏁', maxp:2} };
 var PCOLORS=['#2f81f7','#f85149','#d29922','#3fb950']; // player colors, by seat
 
 /* ================= identity (TEST: npub login, throwaway signing key) ================= */
@@ -411,7 +445,7 @@ function noteEvent(ev,c){
   seenEv.add(ev.id);
   var g=c.gameId||tagv(ev,'g'); if(!g) return;
   (gevents[g]=gevents[g]||[]).push({id:ev.id,at:ev.created_at,type:c.type,player:c.player,
-    index:c.index,edge:c.edge,gen:c.gen,choice:c.choice});
+    index:c.index,edge:c.edge,col:c.col,from:c.from,to:c.to,gen:c.gen,choice:c.choice});
 }
 function onGameEvent(ev){
   var c; try{ c=JSON.parse(ev.content); }catch(e){ return; }
@@ -530,6 +564,133 @@ function dotsOver(bd,nplayers){
   return {scores:scores,winners:win};
 }
 
+/* ================= connect 4 ================= */
+function c4Drop(b,col,piece){
+  for(var r=5;r>=0;r--){ var i=r*7+col; if(!b[i]){ b[i]=piece; return r; } }
+  return -1;
+}
+function c4Winner(b){
+  function at(r,c){ return (r<0||r>5||c<0||c>6)?null:b[r*7+c]; }
+  for(var r=0;r<6;r++) for(var c=0;c<7;c++){
+    var p=at(r,c); if(!p) continue;
+    if(at(r,c+1)===p&&at(r,c+2)===p&&at(r,c+3)===p) return p;
+    if(at(r+1,c)===p&&at(r+2,c)===p&&at(r+3,c)===p) return p;
+    if(at(r+1,c+1)===p&&at(r+2,c+2)===p&&at(r+3,c+3)===p) return p;
+    if(at(r+1,c-1)===p&&at(r+2,c-2)===p&&at(r+3,c-3)===p) return p;
+  }
+  for(var k=0;k<42;k++) if(!b[k]) return null;
+  return 'draw';
+}
+function foldC4(g){
+  var s=sessions[g]; if(!s) return null;
+  var players=s.s.players, gen=s.s.gen||0;
+  var b=new Array(42).fill('');
+  var moves=(gevents[g]||[]).filter(function(e){
+    return e.type==='move'&&(e.gen||0)===gen&&typeof e.col==='number';
+  }).sort(function(a,c){ return a.at-c.at||(a.id<c.id?-1:1); });
+  var turn=0;
+  moves.forEach(function(m){
+    var pi=players.findIndex(function(p){return p.id===m.player.id;});
+    if(pi<0||pi!==turn) return;
+    if(m.col<0||m.col>6) return;
+    if(c4Drop(b,m.col,pi===0?'R':'Y')<0) return;
+    turn=(turn+1)%players.length;
+  });
+  return {board:b, players:players, turn:turn};
+}
+
+/* ================= checkers ================= */
+function newCheckersBoard(){
+  var b=[];
+  for(var r=0;r<8;r++){ b.push([]); for(var c=0;c<8;c++) b[r].push(null); }
+  var r2,c2;
+  for(r2=0;r2<3;r2++) for(c2=0;c2<8;c2++)
+    if((r2+c2)%2===1) b[r2][c2]={p:0,k:false};
+  for(r2=5;r2<8;r2++) for(c2=0;c2<8;c2++)
+    if((r2+c2)%2===1) b[r2][c2]={p:1,k:false};
+  return b;
+}
+function ckDirs(pc){
+  if(pc.k) return [[1,1],[1,-1],[-1,1],[-1,-1]];
+  return pc.p===0?[[1,1],[1,-1]]:[[-1,1],[-1,-1]];
+}
+function ckPieceMoves(b,r,c){
+  // {moves:[[tr,tc]], jumps:[[tr,tc,cr,cc]]}
+  var pc=(r>=0&&r<8&&c>=0&&c<8)?b[r][c]:null;
+  if(!pc) return {moves:[],jumps:[]};
+  var moves=[],jumps=[];
+  ckDirs(pc).forEach(function(d){
+    var r1=r+d[0],c1=c+d[1],r2=r+2*d[0],c2=c+2*d[1];
+    if(r1<0||r1>7||c1<0||c1>7) return;
+    if(!b[r1][c1]) moves.push([r1,c1]);
+    else if(b[r1][c1].p!==pc.p&&r2>=0&&r2<8&&c2>=0&&c2<8&&!b[r2][c2])
+      jumps.push([r2,c2,r1,c1]);
+  });
+  return {moves:moves,jumps:jumps};
+}
+function ckAllMoves(b,player){
+  // jumps are mandatory: if any jump exists, simple moves are illegal
+  var jumps=[];
+  for(var r=0;r<8;r++) for(var c=0;c<8;c++){
+    if(b[r][c]&&b[r][c].p===player){
+      ckPieceMoves(b,r,c).jumps.forEach(function(j){
+        jumps.push({from:[r,c],to:[j[0],j[1]],cap:[j[2],j[3]]});
+      });
+    }
+  }
+  if(jumps.length) return jumps;
+  var out=[];
+  for(var r2=0;r2<8;r2++) for(var c2=0;c2<8;c2++){
+    if(b[r2][c2]&&b[r2][c2].p===player){
+      ckPieceMoves(b,r2,c2).moves.forEach(function(m){
+        out.push({from:[r2,c2],to:[m[0],m[1]],cap:null});
+      });
+    }
+  }
+  return out;
+}
+function foldCheckers(g){
+  var s=sessions[g]; if(!s) return null;
+  var players=s.s.players, gen=s.s.gen||0;
+  var b=newCheckersBoard(), turn=0, cont=null; // cont=[r,c] of piece that must keep jumping
+  var moves=(gevents[g]||[]).filter(function(e){
+    return e.type==='move'&&(e.gen||0)===gen&&e.from&&e.to;
+  }).sort(function(a,z){ return a.at-z.at||(a.id<z.id?-1:1); });
+  moves.forEach(function(m){
+    var pi=players.findIndex(function(p){return p.id===m.player.id;});
+    if(pi<0||pi!==turn) return;
+    var fr=m.from[0],fc=m.from[1],tr=m.to[0],tc=m.to[1];
+    if(cont&&(fr!==cont[0]||fc!==cont[1])) return; // multi-jump continues with same piece
+    var pc=(fr>=0&&fr<8&&fc>=0&&fc<8)?b[fr][fc]:null;
+    if(!pc||pc.p!==pi) return;
+    var legal=ckAllMoves(b,pi), mv=null;
+    for(var i=0;i<legal.length;i++){
+      var L=legal[i];
+      if(L.from[0]===fr&&L.from[1]===fc&&L.to[0]===tr&&L.to[1]===tc){ mv=L; break; }
+    }
+    if(!mv) return;
+    b[tr][tc]=pc; b[fr][fc]=null;
+    if(mv.cap) b[mv.cap[0]][mv.cap[1]]=null;
+    var crowned=false;
+    if(!pc.k&&((pc.p===0&&tr===7)||(pc.p===1&&tr===0))){ pc.k=true; crowned=true; }
+    if(mv.cap&&!crowned&&ckPieceMoves(b,tr,tc).jumps.length>0){
+      cont=[tr,tc]; return; // same player keeps the turn
+    }
+    cont=null; turn=(turn+1)%players.length;
+  });
+  return {board:b, players:players, turn:turn, cont:cont};
+}
+function ckGameOver(f){
+  var n0=0,n1=0;
+  for(var r=0;r<8;r++) for(var c=0;c<8;c++){
+    var q=f.board[r][c]; if(q){ if(q.p===0)n0++; else n1++; }
+  }
+  if(n0===0) return {winner:1};
+  if(n1===0) return {winner:0};
+  if(ckAllMoves(f.board,f.turn).length===0) return {winner:1-f.turn};
+  return null;
+}
+
 /* ================= replay (rematch) =================
  * On game over each player votes: pubEvent 'replay' {choice:'again'|'end', gen}.
  * The host tallies — every current player must vote. All 'again' -> fresh board
@@ -553,6 +714,14 @@ function gameOverInfo(g){
   if(s.s.game==='dotsboxes'){
     var d=foldDots(g), o=dotsOver(d.board,d.players.length);
     return o?{game:'dotsboxes',fold:d,over:o}:null;
+  }
+  if(s.s.game==='connect4'){
+    var c4=foldC4(g), w4=c4Winner(c4.board);
+    return w4?{game:'connect4',fold:c4,w:w4}:null;
+  }
+  if(s.s.game==='checkers'){
+    var ck=foldCheckers(g), ock=ckGameOver(ck);
+    return ock?{game:'checkers',fold:ck,over:ock}:null;
   }
   return null;
 }
@@ -635,8 +804,8 @@ function renderGame(){
   $('replayPanel').style.display='none';
   if(s.status==='open'){
     $('gstatus').textContent=n>=s.maxPlayers?'Starting…':'Waiting for players… '+n+'/'+s.maxPlayers;
-    if(s.game==='dotsboxes'){
-      board.innerHTML='<div class="hint" style="text-align:center;padding:24px;">The grid appears when the game starts.</div>';
+    if(s.game!=='tictactoe'){
+      board.innerHTML='<div class="hint" style="text-align:center;padding:24px;">The board appears when the game starts.</div>';
     }else{
       for(var i=0;i<9;i++){ var c=document.createElement('button'); c.disabled=true; board.appendChild(c); }
     }
@@ -644,6 +813,8 @@ function renderGame(){
   }
   if(s.game==='tictactoe') renderTtt(g,board);
   else if(s.game==='dotsboxes') renderDots(g,board);
+  else if(s.game==='connect4') renderC4(g,board);
+  else if(s.game==='checkers') renderCheckers(g,board);
   renderReplay(g);
 }
 function renderTtt(g,board){
@@ -758,6 +929,116 @@ async function doDotsMove(g,key){
   await pubEvent(g,'move',{edge:key,gen:s.s.gen||0});
   renderGame();
 }
+function renderC4(g,board){
+  var f=foldC4(g), b=f.board, players=f.players;
+  var w=c4Winner(b);
+  board.style.display=''; board.style.gridTemplateColumns='repeat(7,1fr)'; board.style.gap='6px';
+  var mi=players.findIndex(function(p){return p.id===myHex;});
+  var myTurn=!w&&mi>=0&&mi===f.turn;
+  for(var c=0;c<7;c++){
+    (function(col){
+      var d=document.createElement('button'); d.className='c4drop'; d.textContent='▼';
+      d.disabled=!myTurn||!!b[col];
+      d.onclick=function(){ doC4Move(g,col); };
+      board.appendChild(d);
+    })(c);
+  }
+  for(var r=0;r<6;r++) for(var c2=0;c2<7;c2++){
+    var cell=document.createElement('div'); cell.className='c4cell';
+    var v=b[r*7+c2];
+    var disc=document.createElement('div'); disc.className='c4disc'+(v?' '+v:'');
+    cell.appendChild(disc); board.appendChild(cell);
+  }
+  if(w){
+    $('gstatus').textContent=w==='draw'?"It's a draw!":(pname(players[w==='R'?0:1])+' connects four — wins!');
+  }else{
+    $('gstatus').textContent=(f.turn===mi?'Your turn':pname(players[f.turn])+"'s turn")+
+      ' ('+(f.turn===0?'🔴':'🟡')+')';
+  }
+}
+async function doC4Move(g,col){
+  var s=sessions[g]; if(!s) return;
+  var f=foldC4(g); if(!f) return;
+  var mi=f.players.findIndex(function(p){return p.id===myHex;});
+  if(mi<0||mi!==f.turn) return;
+  if(col<0||col>6||f.board[col]) return; // column full
+  await pubEvent(g,'move',{col:col,gen:s.s.gen||0});
+  renderGame();
+}
+/* checkers: tap one of your pieces, then a highlighted square */
+var ckSel=null; // [gameId, r, c]
+function ckLegalDests(b,player,fr,fc){
+  var out=[];
+  ckAllMoves(b,player).forEach(function(m){
+    if(m.from[0]===fr&&m.from[1]===fc) out.push(m.to);
+  });
+  return out;
+}
+function renderCheckers(g,board){
+  var f=foldCheckers(g), b=f.board, players=f.players;
+  var info=ckGameOver(f);
+  board.style.display=''; board.style.gridTemplateColumns='repeat(8,1fr)'; board.style.gap='0';
+  if(ckSel&&ckSel[0]!==g) ckSel=null;
+  var mi=players.findIndex(function(p){return p.id===myHex;});
+  var myTurn=!info&&mi>=0&&mi===f.turn;
+  if(myTurn&&f.cont&&(!ckSel||ckSel[0]!==g)) ckSel=[g,f.cont[0],f.cont[1]]; // must keep jumping
+  var dests=[];
+  if(myTurn&&ckSel) dests=ckLegalDests(b,mi,ckSel[1],ckSel[2]);
+  for(var r=0;r<8;r++) for(var c=0;c<8;c++){
+    (function(r,c){
+      var sq=document.createElement('button');
+      sq.className='cksq '+(((r+c)%2===1)?'dark':'light');
+      sq.setAttribute('data-r',r); sq.setAttribute('data-c',c);
+      var pc=b[r][c];
+      if(pc){
+        var sp=document.createElement('span'); sp.className='ckp p'+pc.p;
+        sp.textContent=pc.k?'♛':'';
+        sq.appendChild(sp);
+      }
+      if(ckSel&&ckSel[1]===r&&ckSel[2]===c) sq.classList.add('sel');
+      if(dests.some(function(d){return d[0]===r&&d[1]===c;})) sq.classList.add('dest');
+      sq.onclick=function(){ ckClick(g,r,c); };
+      board.appendChild(sq);
+    })(r,c);
+  }
+  var n0=0,n1=0;
+  for(var r2=0;r2<8;r2++) for(var c2=0;c2<8;c2++){
+    var q=b[r2][c2]; if(q){ if(q.p===0)n0++; else n1++; }
+  }
+  var sc=pname(players[0])+' '+n0+' · '+pname(players[1])+' '+n1;
+  if(info){
+    $('gstatus').textContent=pname(players[info.winner])+' wins! ('+sc+')';
+  }else if(f.cont){
+    $('gstatus').textContent=(f.turn===mi?'Jump again — keep going!':pname(players[f.turn])+' jumps again…')+' · '+sc;
+  }else{
+    $('gstatus').textContent=(f.turn===mi?'Your turn':pname(players[f.turn])+"'s turn")+' · '+sc;
+  }
+}
+function ckClick(g,r,c){
+  var f=foldCheckers(g); if(!f) return;
+  if(ckGameOver(f)) return;
+  var mi=f.players.findIndex(function(p){return p.id===myHex;});
+  if(mi<0||mi!==f.turn) return;
+  var b=f.board;
+  if(ckSel&&ckSel[0]===g){
+    var fr=ckSel[1],fc=ckSel[2];
+    if(ckLegalDests(b,mi,fr,fc).some(function(d){return d[0]===r&&d[1]===c;})){
+      ckSel=null; doCkMove(g,fr,fc,r,c); return;
+    }
+  }
+  var pc=b[r][c];
+  if(pc&&pc.p===mi&&(!f.cont||(f.cont[0]===r&&f.cont[1]===c))) ckSel=[g,r,c];
+  else ckSel=null;
+  renderGame();
+}
+async function doCkMove(g,fr,fc,tr,tc){
+  var s=sessions[g]; if(!s) return;
+  var f=foldCheckers(g); if(!f) return;
+  var mi=f.players.findIndex(function(p){return p.id===myHex;});
+  if(mi<0||mi!==f.turn) return;
+  await pubEvent(g,'move',{from:[fr,fc],to:[tr,tc],gen:s.s.gen||0});
+  renderGame();
+}
 
 /* ================= timeout sweep ================= */
 setInterval(function(){
@@ -779,7 +1060,10 @@ document.querySelectorAll('.gamepick').forEach(function(el){
   el.onclick=function(){
     selGame=el.getAttribute('data-game');
     document.querySelectorAll('.gamepick').forEach(function(x){x.classList.toggle('sel',x===el);});
-    if(selGame==='tictactoe'){ selPlayers=2; $('pVal').textContent='2'; $('pHint').textContent='tic-tac-toe is 2 players'; }
+    if(GDEF[selGame].maxp===2){
+      selPlayers=2; $('pVal').textContent='2';
+      $('pHint').textContent=GDEF[selGame].label+' is 2 players';
+    }
     else $('pHint').textContent='dots & boxes plays 2–4 players';
   };
 });
@@ -801,7 +1085,7 @@ $('cancelBtn').onclick=function(){ $('sheet').classList.remove('open'); };
 $('pMinus').onclick=function(){ if(selPlayers>2){ selPlayers--; $('pVal').textContent=selPlayers; } };
 $('pPlus').onclick=function(){ var mx=GDEF[selGame].maxp; if(selPlayers<mx){ selPlayers++; $('pVal').textContent=selPlayers; } };
 $('createBtn').onclick=async function(){
-  var maxp=selGame==='tictactoe'?2:selPlayers;
+  var maxp=selGame==='dotsboxes'?selPlayers:2;
   var s={v:1,id:newGameId(),game:selGame,maxPlayers:maxp,status:'open',
     host:myPlayer(),players:[myPlayer()],at:nowSec()};
   if(selGame==='dotsboxes') s.board=newDotsBoard(maxp);
@@ -819,6 +1103,15 @@ $('leaveBtn').onclick=async function(){
 $('endBtn').onclick=function(){ closeGame(openGameId); };
 $('againBtn').onclick=function(){ if(openGameId) voteReplay(openGameId,'again'); };
 $('noReplayBtn').onclick=function(){ if(openGameId) voteReplay(openGameId,'end'); };
+/* QA hook for headless tests (test build only) */
+window.GRTEST={ relayCount:function(){ return socks.filter(function(w){return w.readyState===1;}).length; },
+  sessions:function(){ return Object.keys(sessions); },
+  c4Drop:c4Drop, c4Winner:c4Winner, foldC4:foldC4,
+  newCheckersBoard:newCheckersBoard, ckAllMoves:ckAllMoves, ckPieceMoves:ckPieceMoves,
+  foldCheckers:foldCheckers, ckGameOver:ckGameOver,
+  tttWinner:tttWinner, foldTtt:foldTtt, foldDots:foldDots,
+  doC4Move:doC4Move, doCkMove:doCkMove, ckClick:ckClick, myHex:function(){ return myHex; },
+  gameOverInfo:gameOverInfo, noteEvent:noteEvent };
 })();
 </script>
 </body>

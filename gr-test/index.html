@@ -102,13 +102,13 @@
   #board{
     display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:14px 0;
   }
-  #board button{
+  #board.ttt button{
     aspect-ratio:1; font-size:44px; font-weight:700; border-radius:12px;
     border:1px solid var(--line); background:var(--bg); color:var(--txt); cursor:pointer;
   }
-  #board button:disabled{cursor:default;}
-  #board button.x{color:var(--acc);} #board button.o{color:var(--warn);}
-  #board button.win{border-color:var(--good); box-shadow:0 0 0 1px var(--good);}
+  #board.ttt button:disabled{cursor:default;}
+  #board.ttt button.x{color:var(--acc);} #board.ttt button.o{color:var(--warn);}
+  #board.ttt button.win{border-color:var(--good); box-shadow:0 0 0 1px var(--good);}
   /* dots & boxes */
   #dotsWrap{position:relative; margin:14px auto; touch-action:manipulation;}
   #dotsWrap .dot{position:absolute; width:10px; height:10px; border-radius:50%; background:var(--dim); transform:translate(-50%,-50%); z-index:3; pointer-events:none;}
@@ -119,14 +119,14 @@
   #dotsWrap .box{position:absolute; border-radius:5px; opacity:.5; z-index:0;}
   /* connect 4 */
   .c4drop{font-size:17px; border:1px solid var(--line); background:var(--bg); color:var(--acc);
-    border-radius:8px; padding:7px 0; cursor:pointer;}
+    border-radius:8px; padding:7px 0; cursor:pointer; min-width:0;}
   .c4drop:disabled{opacity:.25; cursor:default;}
   .c4cell{aspect-ratio:1; border-radius:10px; border:1px solid var(--line); background:var(--bg);
-    display:flex; align-items:center; justify-content:center;}
+    display:flex; align-items:center; justify-content:center; min-width:0;}
   .c4disc{width:78%; aspect-ratio:1; border-radius:50%; background:#21262d;}
   .c4disc.R{background:#f85149;} .c4disc.Y{background:#e3b341;}
   /* checkers */
-  .cksq{aspect-ratio:1; border:none; padding:0; cursor:pointer;
+  .cksq{aspect-ratio:1; border:none; padding:0; cursor:pointer; min-width:0;
     display:flex; align-items:center; justify-content:center;}
   .cksq.light{background:#f0d9b5;} .cksq.dark{background:#b58863;}
   .cksq .ckp{width:76%; aspect-ratio:1; border-radius:50%;
@@ -801,6 +801,7 @@ function renderGame(){
   $('endBtn').style.display=isHost(g)?'block':'none';
   $('gplayers').textContent=dispPlayers(g).map(pname).join(', ');
   var board=$('board'); board.innerHTML=''; board.style.display='';
+  board.className=(s.game==='tictactoe')?'ttt':'';
   $('replayPanel').style.display='none';
   if(s.status==='open'){
     $('gstatus').textContent=n>=s.maxPlayers?'Starting…':'Waiting for players… '+n+'/'+s.maxPlayers;

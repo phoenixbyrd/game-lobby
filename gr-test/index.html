@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Green Room Games — TEST</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3; --dim:#8b949e;
+    --acc:#2f81f7; --good:#3fb950; --bad:#f85149; --warn:#d29922;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    max-width:560px; margin:0 auto; min-height:100vh; padding-bottom:40px;
+  }
+  header{
+    display:flex; align-items:center; gap:10px; padding:12px 14px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5;
+  }
+  header h1{font-size:16px; margin:0; font-weight:600;}
+  header .sub{font-size:11px; color:var(--dim);}
+  #dot{width:9px; height:9px; border-radius:50%; background:var(--warn); flex-shrink:0;}
+  #dot.on{background:var(--good);}
+  .spacer{flex:1;}
+  #testbadge{
+    font-size:10px; font-weight:700; color:#0d1117; background:var(--warn);
+    border-radius:4px; padding:3px 7px; letter-spacing:.5px;
+  }
+  .view{display:none; padding:14px;}
+  .view.active{display:block;}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:12px;
+  }
+  .card h2{margin:0 0 6px; font-size:16px;}
+  .hint{font-size:12.5px; color:var(--dim); line-height:1.55;}
+  label.lbl{display:block; font-size:13px; color:var(--dim); margin:12px 0 5px;}
+  input[type=text]{
+    width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px;
+    color:var(--txt); font-size:15px; padding:10px 12px;
+  }
+  .btn{
+    display:block; width:100%; border:1px solid var(--line); background:var(--bg); color:var(--txt);
+    border-radius:8px; padding:12px; font-size:15px; cursor:pointer; margin-top:10px;
+  }
+  .btn.primary{background:var(--acc); border-color:var(--acc); color:#fff; font-weight:700;}
+  .btn.danger{color:var(--bad); border-color:#f8514955;}
+  .btn:disabled{opacity:.45; cursor:default;}
+  .grow{flex:1;} .row{display:flex; gap:8px; align-items:center;}
+  .grow .btn{margin-top:0;}
+  /* join list */
+  .gamerow{
+    display:flex; align-items:center; gap:10px; background:var(--panel);
+    border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px;
+  }
+  .gamerow .ico{font-size:26px;}
+  .gamerow .meta{flex:1; min-width:0;}
+  .gamerow .t{font-weight:600; font-size:14.5px;}
+  .gamerow .s{font-size:12px; color:var(--dim); margin-top:2px;}
+  .pill{
+    font-size:12px; font-weight:700; background:var(--bg); border:1px solid var(--line);
+    border-radius:20px; padding:4px 10px; white-space:nowrap;
+  }
+  .pill.full{color:var(--good); border-color:#3fb95055;}
+  .joinbtn{
+    border:1px solid var(--acc); background:var(--acc); color:#fff; border-radius:8px;
+    padding:9px 16px; font-size:14px; font-weight:700; cursor:pointer; flex-shrink:0;
+  }
+  .joinbtn:disabled{opacity:.4;}
+  .empty{ text-align:center; color:var(--dim); padding:34px 10px; font-size:14px; }
+  .sect{font-size:12px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin:18px 2px 8px;}
+  /* new game sheet */
+  #sheet{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:20;
+    align-items:flex-end; justify-content:center;
+  }
+  #sheet.open{display:flex;}
+  #sheetCard{
+    background:var(--panel); border:1px solid var(--line); border-bottom:none;
+    border-radius:16px 16px 0 0; width:100%; max-width:560px; padding:18px 16px 26px;
+    max-height:85vh; overflow-y:auto;
+  }
+  #sheetCard h2{margin:0 0 4px; font-size:17px;}
+  .gamepick{
+    display:flex; align-items:center; gap:12px; border:1px solid var(--line);
+    border-radius:10px; padding:12px; margin-top:10px; cursor:pointer; background:var(--bg);
+  }
+  .gamepick.sel{border-color:var(--acc); box-shadow:0 0 0 1px var(--acc);}
+  .gamepick .ico{font-size:30px;}
+  .gamepick .t{font-weight:700;}
+  .gamepick .s{font-size:12px; color:var(--dim);}
+  .stepper{display:flex; align-items:center; gap:14px; margin-top:8px;}
+  .stepper button{
+    width:44px; height:44px; font-size:22px; border-radius:10px; border:1px solid var(--line);
+    background:var(--bg); color:var(--txt); cursor:pointer;
+  }
+  .stepper .val{font-size:22px; font-weight:700; min-width:30px; text-align:center;}
+  /* board */
+  #board{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:14px 0;
+  }
+  #board button{
+    aspect-ratio:1; font-size:44px; font-weight:700; border-radius:12px;
+    border:1px solid var(--line); background:var(--bg); color:var(--txt); cursor:pointer;
+  }
+  #board button:disabled{cursor:default;}
+  #board button.x{color:var(--acc);} #board button.o{color:var(--warn);}
+  #board button.win{border-color:var(--good); box-shadow:0 0 0 1px var(--good);}
+  #gstatus{font-size:14px; text-align:center; min-height:22px; margin:4px 0 2px;}
+  #gplayers{font-size:12.5px; color:var(--dim); text-align:center; margin-bottom:6px;}
+  #toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+    background:var(--panel); border:1px solid var(--line); color:var(--txt);
+    padding:11px 18px; border-radius:10px; font-size:14px; opacity:0; pointer-events:none;
+    transition:opacity .25s, transform .25s; z-index:50; max-width:92vw; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--dim); word-break:break-all;}
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span>
+  <div>
+    <h1>🎮 Green Room Games</h1>
+    <div class="sub" id="whoLine">not logged in</div>
+  </div>
+  <div class="spacer"></div>
+  <span id="testbadge">TEST</span>
+</header>
+
+<!-- LOGIN -->
+<div class="view active" id="vLogin">
+  <div class="card">
+    <h2>Log in with your npub</h2>
+    <div class="hint">Test build — paste your <b>npub</b> (public key, safe to share). No nsec needed.
+      This page signs test game events with a throwaway key made on this device; other test clients
+      identify you by the npub in the game data, not the signature. Nothing here touches the real Green Room app.</div>
+    <label class="lbl" for="npubIn">Your npub</label>
+    <input type="text" id="npubIn" placeholder="npub1…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn primary" id="loginBtn">Log in &amp; find games</button>
+    <div class="hint" id="loginErr" style="color:var(--bad); margin-top:8px;"></div>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div class="view" id="vLobby">
+  <div class="sect">Open games</div>
+  <div id="joinList"></div>
+  <button class="btn primary" id="newGameBtn">＋ New game</button>
+  <div class="sect">How it works</div>
+  <div class="card"><div class="hint">
+    Create a game, others join from this list. A game starts when it's full
+    (2 players for tic-tac-toe — it won't start at 1/2). The host can end the game
+    at any time: it disappears from the list and everyone goes back here.
+    Games idle for 5 minutes time out and vanish.
+  </div></div>
+</div>
+
+<!-- GAME -->
+<div class="view" id="vGame">
+  <div class="card">
+    <div class="row" style="margin-bottom:2px;">
+      <div style="flex:1;"><h2 id="gTitle" style="margin:0;">Tic-tac-toe</h2>
+      <div class="hint" id="gHost"></div></div>
+      <span class="pill" id="gCount">1/2</span>
+    </div>
+    <div id="gstatus"></div>
+    <div id="board"></div>
+    <div id="gplayers"></div>
+    <div class="row">
+      <div class="grow"><button class="btn danger" id="endBtn" style="display:none; margin-top:0;">End game</button></div>
+      <div class="grow"><button class="btn" id="leaveBtn" style="margin-top:0;">Leave</button></div>
+    </div>
+  </div>
+  <button class="btn" id="backBtn">← Back to games</button>
+</div>
+
+<!-- NEW GAME SHEET -->
+<div id="sheet"><div id="sheetCard">
+  <h2>New game</h2>
+  <div class="hint">Pick a game. It appears in the join list for everyone in the Green Room test.</div>
+  <div class="gamepick sel" data-game="tictactoe">
+    <span class="ico">⭕</span>
+    <div><div class="t">Tic-tac-toe</div><div class="s">Classic 3×3 — 2 players, X goes first</div></div>
+  </div>
+  <label class="lbl">Players</label>
+  <div class="stepper">
+    <button id="pMinus" aria-label="fewer players">−</button>
+    <span class="val" id="pVal">2</span>
+    <button id="pPlus" aria-label="more players">＋</button>
+    <span class="hint">tic-tac-toe is 2 players</span>
+  </div>
+  <button class="btn primary" id="createBtn">Create game</button>
+  <button class="btn" id="cancelBtn">Cancel</button>
+</div></div>
+
+<div id="toast"></div>
+
+<script src="secp256k1.bundle.js"></script>
+<script>
+(function(){
+'use strict';
+/* ================= utils ================= */
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function hex(b){ var s=''; for(var i=0;i<b.length;i++) s+=b[i].toString(16).padStart(2,'0'); return s; }
+function unhex(s){ var a=new Uint8Array(s.length/2); for(var i=0;i<a.length;i++) a[i]=parseInt(s.substr(i*2,2),16); return a; }
+async function sha256hex(str){ var d=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return hex(new Uint8Array(d)); }
+function tagv(ev,n){ var t=ev.tags||[]; for(var i=0;i<t.length;i++) if(t[i][0]===n) return t[i][1]; return null; }
+function nowSec(){ return Math.floor(Date.now()/1000); }
+function newGameId(){ var h='0123456789abcdef',s='g'; for(var i=0;i<8;i++) s+=h[Math.floor(Math.random()*16)]; return s; }
+var toastT=null;
+function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove('show');},2600); }
+function showView(id){ ['vLogin','vLobby','vGame'].forEach(function(v){ $(v).classList.toggle('active', v===id); }); }
+
+/* bech32 — decode only (npub -> hex) */
+function bech32Decode(str){
+  var ALPH='qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+  var s=String(str).trim(), pos=s.lastIndexOf('1'), i, j;
+  if(pos<1||pos+7>s.length) return null;
+  var hrp=s.slice(0,pos).toLowerCase(), data=[];
+  for(i=pos+1;i<s.length;i++){ var d=ALPH.indexOf(s[i].toLowerCase()); if(d<0) return null; data.push(d); }
+  var vals=[]; for(i=0;i<hrp.length;i++) vals.push(hrp.charCodeAt(i)>>5); vals.push(0);
+  for(i=0;i<hrp.length;i++) vals.push(hrp.charCodeAt(i)&31);
+  var chk=vals.concat(data), GEN=[0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3], p=1;
+  for(i=0;i<chk.length;i++){ var b=p>>25; p=((p&0x1ffffff)<<5)^chk[i]; for(j=0;j<5;j++) if((b>>j)&1) p^=GEN[j]; }
+  if(p!==1) return null;
+  var payload=data.slice(0,-6), acc=0, bits=0, out=[];
+  for(i=0;i<payload.length;i++){ acc=(acc<<5)|payload[i]; bits+=5; while(bits>=8){ bits-=8; out.push((acc>>bits)&255); } }
+  return {hrp:hrp, bytes:out};
+}
+function npubToHex(s){
+  s=String(s).trim();
+  if(/^[0-9a-fA-F]{64}$/.test(s)) return s.toLowerCase();
+  if(s.toLowerCase().indexOf('npub1')===0){
+    var d=bech32Decode(s);
+    if(d&&d.hrp==='npub'&&d.bytes.length===32)
+      return d.bytes.map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
+  }
+  return null;
+}
+
+/* ================= constants ================= */
+var RELAYS=['wss://nos.lol','wss://relay.snort.social','wss://relay.primal.net','wss://relay.damus.io'];
+var ROOM='c8cccebb2f77da1618a33b05530535026449f77a91e02fbd4ebe3830899f263c'; // the Green Room
+var K_SESSION=30032, K_EVENT=30033;
+var IDLE_TIMEOUT=300; // 5 minutes
+var GDEF={ tictactoe:{label:'Tic-tac-toe', icon:'⭕', maxp:2} };
+
+/* ================= identity (TEST: npub login, throwaway signing key) ================= */
+var myHex=null, myNpub='', myName='player', signHex=null, myPubHex=null;
+function loadThrowaway(){
+  try{
+    var k=sessionStorage.getItem('grt_sign');
+    if(k&&/^[0-9a-f]{64}$/.test(k)) return k;
+  }catch(e){}
+  var b=new Uint8Array(32); crypto.getRandomValues(b); var k2=hex(b);
+  try{ sessionStorage.setItem('grt_sign',k2); }catch(e){}
+  return k2;
+}
+
+/* ================= nostr ================= */
+var socks=[];
+function broadcast(msg){ socks.forEach(function(w){ try{ if(w.readyState===1) w.send(msg); }catch(e){} }); }
+function connect(){
+  RELAYS.forEach(function(url){
+    var ws;
+    try{ ws=new WebSocket(url); }catch(e){ return; }
+    ws.onopen=function(){
+      socks.push(ws); $('dot').classList.add('on');
+      ws.send(JSON.stringify(['REQ','grt:games',{kinds:[K_SESSION,K_EVENT],'#room':[ROOM]}]));
+      ws.send(JSON.stringify(['REQ','grt:prof:'+myHex,{kinds:[0],authors:[myHex],limit:1}]));
+    };
+    ws.onclose=function(){ var i=socks.indexOf(ws); if(i>=0) socks.splice(i,1); if(!socks.length) $('dot').classList.remove('on'); };
+    ws.onerror=function(){ try{ws.close();}catch(e){} };
+    ws.onmessage=function(m){ handleMsg(m.data); };
+  });
+}
+async function makeEvent(kind,tags,content){
+  var ev={kind:kind,pubkey:myPubHex,created_at:nowSec(),tags:tags,content:JSON.stringify(content)};
+  ev.id=await sha256hex(JSON.stringify([0,ev.pubkey,ev.created_at,ev.kind,ev.tags,ev.content]));
+  ev.sig=hex(await nobleSecp.schnorr.sign(unhex(ev.id),unhex(signHex)));
+  return ev;
+}
+function publish(ev){ broadcast(JSON.stringify(['EVENT',ev])); }
+function handleMsg(data){
+  var m; try{ m=JSON.parse(data); }catch(e){ return; }
+  if(!m||m[0]!=='EVENT') return;
+  var ev=m[2]; if(!ev||!ev.id) return;
+  if(ev.kind===0&&ev.pubkey===myHex){ setNameFromProfile(ev); return; }
+  if(ev.kind===0){ var nm=profileName(ev); if(nm) nameCache[ev.pubkey]=nm; renderJoinList(); renderGame(); return; }
+  if(ev.kind!==K_SESSION&&ev.kind!==K_EVENT) return;
+  if(tagv(ev,'room')!==ROOM) return;
+  if(ev.kind===K_SESSION) onSession(ev); else onGameEvent(ev);
+}
+function profileName(ev){
+  try{ var c=JSON.parse(ev.content); var n=(c.display_name||c.name||'').trim(); return n||null; }catch(e){ return null; }
+}
+var nameCache={};
+function setNameFromProfile(ev){ var n=profileName(ev); if(n){ myName=n; $('whoLine').textContent='in as '+n; } }
+function requestName(hex){
+  if(nameCache[hex]||hex===myHex) return;
+  nameCache[hex]=null;
+  broadcast(JSON.stringify(['REQ','grt:n:'+hex.slice(0,8),{kinds:[0],authors:[hex],limit:1}]));
+}
+function pname(p){ // p = {id: hex, name}
+  if(!p) return 'player';
+  if(p.id===myHex) return myName;
+  if(p.name) return p.name;
+  if(nameCache[p.id]) return nameCache[p.id];
+  requestName(p.id); return 'player';
+}
+
+/* ================= game protocol =================
+ * kind 30032 session (replaceable, host-owned): {v,id,game,maxPlayers,status,host,players,at}
+ * kind 30033 event: {v,gameId,type:join|move|leave,player,index,at}
+ * tags: ['room', ROOM]; session also ['d', gameId]; events ['g', gameId]
+ * TEST TRUST: player identity comes from content.player.id (the npub logged in
+ * with), NOT the event pubkey — the test page signs with a throwaway key.
+ */
+var sessions={};   // gameId -> {ev, s} newest session
+var gevents={};    // gameId -> [event payloads] (deduped)
+var seenEv=new Set();
+var openGameId=null;   // game currently shown in game view
+var pendingJoin=null;  // gameId we asked to join, awaiting session
+var pendingJoinT=0;
+
+function myPlayer(){ return {id:myHex, name:myName}; }
+function isHost(g){ var s=sessions[g]; return s&&s.s.host&&s.s.host.id===myHex; }
+function inPlayers(g){
+  var s=sessions[g]; if(!s) return false;
+  return s.s.players.some(function(p){return p.id===myHex;});
+}
+/* display player list: session players + join events not yet folded in, minus leavers */
+function dispPlayers(g){
+  var s=sessions[g]; if(!s) return [];
+  var out=s.s.players.slice();
+  var evs=gevents[g]||[];
+  evs.forEach(function(e){
+    if(e.type==='join'&&!out.some(function(p){return p.id===e.player.id;})) out.push(e.player);
+    if(e.type==='leave') out=out.filter(function(p){return p.id!==e.player.id;});
+  });
+  return out.slice(0,s.s.maxPlayers);
+}
+function lastActivity(g){
+  var s=sessions[g]; if(!s) return 0;
+  var t=s.s.at||s.ev.created_at;
+  (gevents[g]||[]).forEach(function(e){ if(e.at>t) t=e.at; });
+  return t;
+}
+function isTimedOut(g){ return nowSec()-lastActivity(g)>IDLE_TIMEOUT; }
+
+async function pubSession(s){
+  s.at=nowSec();
+  var ev=await makeEvent(K_SESSION,[['d',s.id],['room',ROOM]],s);
+  sessions[s.id]={ev:ev,s:s};
+  publish(ev);
+}
+async function pubEvent(g,type,extra){
+  var c={v:1,gameId:g,type:type,player:myPlayer(),at:nowSec()};
+  if(extra) for(var k in extra) c[k]=extra[k];
+  var ev=await makeEvent(K_EVENT,[['g',g],['room',ROOM]],c);
+  noteEvent(ev,c);
+  publish(ev);
+}
+function onSession(ev){
+  var gid=tagv(ev,'d'); if(!gid) return;
+  var s; try{ s=JSON.parse(ev.content); }catch(e){ return; }
+  if(!s||s.v!==1||!GDEF[s.game]) return;
+  var cur=sessions[gid];
+  if(cur&&(cur.ev.created_at>ev.created_at||(cur.ev.created_at===ev.created_at&&cur.ev.id>ev.id))) return;
+  sessions[gid]={ev:ev,s:s};
+  if(s.status==='closed'){
+    if(openGameId===gid){ openGameId=null; showView('vLobby'); toast('Game ended — back to the games list'); }
+    if(pendingJoin===gid) pendingJoin=null;
+  }
+  if(pendingJoin===gid&&s.status!=='closed'&&s.players.some(function(p){return p.id===myHex;})){
+    pendingJoin=null; openGame(gid);
+  }
+  renderJoinList(); renderGame();
+}
+function noteEvent(ev,c){
+  if(seenEv.has(ev.id)) return;
+  seenEv.add(ev.id);
+  var g=c.gameId||tagv(ev,'g'); if(!g) return;
+  (gevents[g]=gevents[g]||[]).push({id:ev.id,at:ev.created_at,type:c.type,player:c.player,index:c.index});
+}
+function onGameEvent(ev){
+  var c; try{ c=JSON.parse(ev.content); }catch(e){ return; }
+  if(!c||c.v!==1||!c.gameId||!c.player||!c.player.id) return;
+  noteEvent(ev,c);
+  var g=c.gameId, s=sessions[g];
+  if(c.type==='join'&&s&&isHost(g)&&s.s.status==='open'){
+    hostAddPlayer(g,c.player);
+  }
+  if(c.type==='leave'&&s&&isHost(g)&&s.s.status!=='closed'){
+    hostRemovePlayer(g,c.player.id);
+  }
+  renderJoinList(); renderGame();
+}
+async function hostAddPlayer(g,p){
+  var s=sessions[g].s;
+  if(s.players.some(function(x){return x.id===p.id;})) return;
+  if(s.players.length>=s.maxPlayers) return;
+  s.players.push({id:p.id,name:p.name||'player'});
+  if(s.players.length>=s.maxPlayers) s.status='playing';
+  await pubSession(s);
+}
+async function hostRemovePlayer(g,pid){
+  var s=sessions[g].s;
+  s.players=s.players.filter(function(x){return x.id!==pid;});
+  if(s.status==='playing'){ s.status='closed'; } // a leaver ends a live game
+  await pubSession(s);
+}
+
+/* ================= tic-tac-toe ================= */
+function tttWinner(b){
+  var L=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  for(var i=0;i<L.length;i++){ var a=L[i][0],c=L[i][1],d=L[i][2];
+    if(b[a]&&b[a]===b[c]&&b[a]===b[d]) return {mark:b[a],line:L[i]}; }
+  for(var j=0;j<9;j++) if(!b[j]) return null;
+  return {mark:'draw',line:[]};
+}
+function foldTtt(g){
+  var s=sessions[g]; if(!s) return null;
+  var players=s.s.players;
+  var moves=(gevents[g]||[]).filter(function(e){return e.type==='move';})
+    .sort(function(a,b){return a.at-b.at||(a.id<b.id?-1:1);});
+  var board=['','','','','','','','',''], xC=0, oC=0;
+  moves.forEach(function(m){
+    if(typeof m.index!=='number'||m.index<0||m.index>8||board[m.index]) return;
+    var mark=(xC<=oC)?'X':'O';
+    var pi=players.findIndex(function(p){return p.id===m.player.id;});
+    if(pi<0||(mark==='X'?pi!==0:pi!==1)) return; // wrong turn / not a player
+    board[m.index]=mark; if(mark==='X')xC++; else oC++;
+  });
+  return {board:board,players:players,xC:xC,oC:oC};
+}
+function myMark(g){
+  var s=sessions[g]; if(!s) return null;
+  var i=s.s.players.findIndex(function(p){return p.id===myHex;});
+  return i===0?'X':(i===1?'O':null);
+}
+
+/* ================= rendering ================= */
+function renderJoinList(){
+  var el=$('joinList');
+  var list=Object.keys(sessions)
+    .map(function(g){return {g:g,s:sessions[g].s};})
+    .filter(function(x){return x.s.status!=='closed'&&!isTimedOut(x.g);})
+    .sort(function(a,b){return b.s.at-a.s.at;});
+  if(!list.length){ el.innerHTML='<div class="empty">No open games right now.<br>Create one and Mica can join you.</div>'; return; }
+  el.innerHTML='';
+  list.forEach(function(x){
+    var def=GDEF[x.s.game], n=dispPlayers(x.g).length, full=n>=x.s.maxPlayers;
+    var row=document.createElement('div'); row.className='gamerow';
+    var imIn=x.s.players.some(function(p){return p.id===myHex;});
+    row.innerHTML='<span class="ico">'+def.icon+'</span>'+
+      '<div class="meta"><div class="t">'+esc(def.label)+'</div>'+
+      '<div class="s">hosted by '+esc(pname(x.s.host))+(x.s.status==='playing'?' · in progress':'')+'</div></div>'+
+      '<span class="pill'+(full?' full':'')+'">'+n+'/'+x.s.maxPlayers+'</span>';
+    var b=document.createElement('button'); b.className='joinbtn';
+    b.textContent=imIn?'Open':(full?'Full':'Join');
+    b.disabled=full&&!imIn;
+    b.onclick=function(){ if(imIn) openGame(x.g); else joinGame(x.g); };
+    row.appendChild(b); el.appendChild(row);
+  });
+}
+function openGame(g){ openGameId=g; showView('vGame'); renderGame(); }
+async function joinGame(g){
+  pendingJoin=g; pendingJoinT=Date.now();
+  await pubEvent(g,'join');
+  toast('Joining…');
+  setTimeout(function(){
+    if(pendingJoin!==g) return;
+    var s=sessions[g];
+    if(s&&dispPlayers(g).length>=s.s.maxPlayers&&!inPlayers(g)){
+      pendingJoin=null; toast('Game is full'); renderJoinList();
+    }
+  },6000);
+}
+function renderGame(){
+  var g=openGameId;
+  if(!g||!sessions[g]){ return; }
+  var s=sessions[g].s, def=GDEF[s.game];
+  $('gTitle').textContent=def.label;
+  $('gHost').textContent='hosted by '+pname(s.host);
+  var n=dispPlayers(g).length;
+  $('gCount').textContent=n+'/'+s.maxPlayers;
+  $('endBtn').style.display=isHost(g)?'block':'none';
+  $('gplayers').textContent=dispPlayers(g).map(pname).join(', ');
+  var board=$('board'); board.innerHTML='';
+  if(s.status==='open'){
+    $('gstatus').textContent=n>=s.maxPlayers?'Starting…':'Waiting for players… '+n+'/'+s.maxPlayers;
+    for(var i=0;i<9;i++){ var c=document.createElement('button'); c.disabled=true; board.appendChild(c); }
+    return;
+  }
+  var f=foldTtt(g), w=tttWinner(f.board);
+  for(var j=0;j<9;j++){
+    (function(idx){
+      var c=document.createElement('button');
+      c.textContent=f.board[idx]; c.disabled=true;
+      if(f.board[idx]==='X')c.className='x'; if(f.board[idx]==='O')c.className='o';
+      if(w&&w.line.indexOf(idx)>=0)c.classList.add('win');
+      c.onclick=function(){ doMove(g,idx); };
+      board.appendChild(c);
+    })(j);
+  }
+  if(w){
+    $('gstatus').textContent=w.mark==='draw'?"It's a draw!":(pname(playerByMark(g,w.mark))+' wins!');
+    Array.prototype.forEach.call(board.children,function(c){c.disabled=true;});
+  }else{
+    var turnMark=(f.xC<=f.oC)?'X':'O';
+    var turnP=playerByMark(g,turnMark);
+    var mine=myMark(g)===turnMark;
+    $('gstatus').textContent=mine?('Your turn ('+turnMark+')'):(pname(turnP)+"'s turn ("+turnMark+')');
+    if(mine) Array.prototype.forEach.call(board.children,function(c,idx){ if(!f.board[idx]) c.disabled=false; });
+  }
+}
+function playerByMark(g,mark){
+  var s=sessions[g].s;
+  return s.players[mark==='X'?0:1]||null;
+}
+async function doMove(g,idx){
+  var f=foldTtt(g); if(!f||f.board[idx]) return;
+  var turnMark=(f.xC<=f.oC)?'X':'O';
+  if(myMark(g)!==turnMark) return;
+  await pubEvent(g,'move',{index:idx});
+  renderGame();
+}
+
+/* ================= timeout sweep ================= */
+setInterval(function(){
+  if(!myHex) return;
+  var changed=false;
+  Object.keys(sessions).forEach(function(g){
+    var s=sessions[g].s;
+    if(s.status==='closed'||!isTimedOut(g)) return;
+    if(isHost(g)){ s.status='closed'; pubSession(s); }
+    else { delete sessions[g]; changed=true; }
+    if(openGameId===g){ openGameId=null; showView('vLobby'); toast('Game timed out after 5 idle minutes'); }
+  });
+  if(changed){ renderJoinList(); renderGame(); }
+},30000);
+
+/* ================= wiring ================= */
+var selGame='tictactoe', selPlayers=2;
+$('loginBtn').onclick=async function(){
+  var idHex=npubToHex($('npubIn').value);
+  if(!idHex){ $('loginErr').textContent='That doesn\u2019t look like an npub (or 64-hex key).'; return; }
+  $('loginErr').textContent='';
+  myHex=idHex; signHex=loadThrowaway();
+  myPubHex=hex(await nobleSecp.schnorr.getPublicKey(unhex(signHex)));
+  myNpub=$('npubIn').value.trim();
+  $('whoLine').textContent='in as '+myNpub.slice(0,12)+'…';
+  connect();
+  showView('vLobby'); renderJoinList();
+  toast('Logged in — happy gaming');
+};
+$('npubIn').addEventListener('keydown',function(e){ if(e.key==='Enter') $('loginBtn').click(); });
+$('newGameBtn').onclick=function(){ $('sheet').classList.add('open'); };
+$('cancelBtn').onclick=function(){ $('sheet').classList.remove('open'); };
+$('pMinus').onclick=function(){ if(selPlayers>2){ selPlayers--; $('pVal').textContent=selPlayers; } };
+$('pPlus').onclick=function(){ if(selPlayers<4){ selPlayers++; $('pVal').textContent=selPlayers; }
+  if(selGame==='tictactoe'&&selPlayers>2){ selPlayers=2; $('pVal').textContent=2; toast('tic-tac-toe is 2 players'); } };
+$('createBtn').onclick=async function(){
+  var maxp=selGame==='tictactoe'?2:selPlayers;
+  var s={v:1,id:newGameId(),game:selGame,maxPlayers:maxp,status:'open',
+    host:myPlayer(),players:[myPlayer()],at:nowSec()};
+  $('sheet').classList.remove('open');
+  await pubSession(s);
+  openGame(s.id);
+};
+$('backBtn').onclick=function(){ openGameId=null; showView('vLobby'); renderJoinList(); };
+$('leaveBtn').onclick=async function(){
+  var g=openGameId; if(!g) return;
+  if(isHost(g)){ $('endBtn').click(); return; }
+  await pubEvent(g,'leave');
+  openGameId=null; showView('vLobby'); renderJoinList();
+};
+$('endBtn').onclick=async function(){
+  var g=openGameId; if(!g||!isHost(g)) return;
+  var s=sessions[g].s; s.status='closed';
+  await pubSession(s);
+  openGameId=null; showView('vLobby'); renderJoinList();
+  toast('Game ended');
+};
+})();
+</script>
+</body>
+</html>

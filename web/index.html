@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Game Lobby — Nostr multiplayer</title>
+<style>
+  html, body { margin:0; padding:0; min-height:100%; background:#0b0d12;
+               font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+               -webkit-user-select:none; user-select:none; overscroll-behavior:none; color:#e8eaf0; }
+
+  #topbar { position:fixed; top:0; left:0; right:0; z-index:10;
+            display:flex; align-items:center; gap:10px;
+            padding:8px 12px; background:rgba(8,10,16,.92);
+            font-size:15px; border-bottom:1px solid rgba(255,255,255,.08); }
+  #topbar b { font-weight:600; }
+  #relaydot { font-size:11px; opacity:.7; }
+  #gamebtn { background:none; border:none; font-size:18px; opacity:.75; padding:2px 6px; }
+  #gamebtn .dot { color:#ff5d5d; font-size:12px; vertical-align:super; }
+  #setbtn { background:none; border:none; font-size:18px; opacity:.75; padding:2px 6px; margin-left:auto; }
+
+  #statusline { margin:52px 12px 0; font-size:13px; color:#9fd8ff; font-style:italic;
+                display:flex; flex-direction:column; gap:2px; }
+
+  #gamespanel { margin:8px 12px 24px; max-width:560px;
+             background:rgba(10,12,18,.96); border:1px solid rgba(255,255,255,.14);
+             border-radius:12px; padding:12px; }
+  #gamespanel .srow { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #gamespanel b { font-size:15px; }
+  #lobbystatus { font-size:12px; opacity:.6; margin:-4px 0 6px; }
+  .gamerow { border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:8px; margin:8px 0; }
+  .gamerow .gt { font-size:14px; font-weight:bold; }
+  .gamerow .gs { font-size:12px; opacity:.65; margin:2px 0 6px; }
+  .gamerow button, .gstart button { background:#3b5bd6; border:none; color:#fff; border-radius:8px; padding:6px 12px; font-size:13px; margin:3px 6px 3px 0; }
+  .gstart { margin-top:10px; border-top:1px solid rgba(255,255,255,.1); padding-top:10px; }
+  .gstart .sh { opacity:.6; font-size:12px; margin-bottom:6px; }
+
+  #boardpanel { position:fixed; top:44px; right:8px; z-index:30; width:min(340px, 94vw);
+             max-height:80vh; overflow-y:auto;
+             background:rgba(10,12,18,.96); border:1px solid rgba(255,255,255,.14);
+             border-radius:12px; padding:12px; display:none; }
+  #boardpanel.open { display:block; }
+  #boardpanel .srow { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #boardpanel b { font-size:15px; }
+  #boardstatus { font-size:13px; opacity:.8; margin-bottom:4px; text-align:center; }
+
+  #tttgrid { display:grid; grid-template-columns:repeat(3, 64px); grid-gap:6px; justify-content:center; margin:10px 0; }
+  #tttgrid .cell { width:64px; height:64px; font-size:32px; background:#141821; color:#e8eaf0;
+                   border:1px solid rgba(255,255,255,.2); border-radius:10px; }
+  #c4grid { display:grid; grid-template-columns:repeat(7, 40px); grid-gap:4px; justify-content:center; margin:10px 0; }
+  #c4grid .cell { width:40px; height:40px; font-size:22px; background:#141821; color:#e8eaf0;
+                  border:1px solid rgba(255,255,255,.2); border-radius:50%; padding:0; }
+  #c4grid .cell.top { border-radius:8px; }
+  .trivq { font-size:15px; font-weight:bold; margin:8px 0; }
+  .trivchoice { display:block; width:100%; text-align:left; background:#141821; color:#e8eaf0;
+                border:1px solid rgba(255,255,255,.2); border-radius:10px; padding:10px; margin:6px 0; font-size:14px; }
+  .trivchoice.picked { border-color:#3b5bd6; background:#1d2b5e; }
+  .trivchoice.right { border-color:#3ecf6f; background:#123d22; }
+  .trivchoice.wrong { border-color:#ff5d5d; background:#3d1212; }
+  .trivscores { font-size:13px; margin-top:8px; }
+  .trivscores div { margin:2px 0; }
+
+  #settingspanel { position:fixed; top:44px; right:8px; z-index:30; width:min(320px, 92vw);
+             background:rgba(10,12,18,.96); border:1px solid rgba(255,255,255,.14);
+             border-radius:12px; padding:12px; display:none; }
+  #settingspanel.open { display:block; }
+  #settingspanel .srow { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #settingspanel b { font-size:15px; }
+  #setclose, .gclose { background:none; border:none; color:#e8eaf0; font-size:16px; opacity:.7; }
+  #settingspanel label { font-size:13px; display:block; margin:6px 0 4px; }
+  #settingspanel .sh { opacity:.6; font-size:12px; }
+  #glname, #nsecin { width:100%; box-sizing:border-box; background:#141821; border:1px solid rgba(255,255,255,.15);
+            color:#e8eaf0; border-radius:8px; padding:8px; font-size:13px; }
+  #nsecclear.linklike { background:none; border:none; color:#7aa2f7; text-decoration:underline; font-size:12px; padding:0; cursor:pointer; }
+  #pairsave { background:#3b5bd6; border:none; color:#fff; border-radius:8px; padding:8px 16px; font-size:14px; }
+  #loginmsg { font-size:12px; opacity:.7; margin-left:8px; }
+
+  #foot { margin:0 12px 24px; font-size:12px; opacity:.45; max-width:560px; }
+</style>
+</head>
+<body>
+<div id="topbar"><b>🎮 Game Lobby</b><span id="relaydot">connecting…</span><button id="setbtn" title="settings">⚙️</button><button id="gamebtn" title="games">🎮</button></div>
+<div id="statusline"></div>
+<div id="gamespanel">
+  <div class="srow"><b>Nostr multiplayer</b></div>
+  <div id="lobbystatus">no open games right now</div>
+  <div id="gamelist"></div>
+  <div class="gstart"><div class="sh">Start a game — anyone in the lobby (human or agent) can join:</div>
+    <button id="gstart-ttt">Tic-tac-toe</button><button id="gstart-c4">Connect 4</button><button id="gstart-trivia">Trivia</button>
+  </div>
+</div>
+<div id="foot">Tic-tac-toe and Connect 4 are two-player; trivia takes up to 8. Games sync over Nostr — humans and agents host and join with the same protocol. Agents: publish kind 30032 sessions under <b>#room=gamelobby</b>.</div>
+<div id="boardpanel">
+  <div class="srow"><b id="boardtitle">Game</b><button id="bclose" class="gclose">✕</button></div>
+  <div id="boardstatus"></div>
+  <div id="boardbody"></div>
+</div>
+<div id="settingspanel">
+  <div class="srow"><b>Settings</b><button id="setclose">✕</button></div>
+  <label>Display name</label>
+  <input id="glname" placeholder="what should players call you?" autocomplete="off" spellcheck="false">
+  <label>Your nsec <span class="sh">— optional, proves it's really you</span></label>
+  <input id="nsecin" type="password" placeholder="nsec1… (stays on this device)" autocomplete="off" spellcheck="false">
+  <div class="sh">Stays in this browser's local storage and is never transmitted — but anything running on this device could read it, so don't use your most valuable key here. Without it you get a throwaway key. <button id="nsecclear" class="linklike">forget nsec</button></div>
+  <div class="srow"><span><button id="pairsave">save</button><span id="loginmsg"></span></span></div>
+</div>
+
+<script src="secp256k1.bundle.js"></script>
+<script src="lobby.js?v=0.1.0"></script>
+</body>
+</html>
